@@ -68,7 +68,7 @@ Guide your kingdom through economy, technology, diplomacy, war and miracles. Rus
 который публикуется на GitHub Pages. Он обновляется автоматически: после каждого изменения исходников
 игра собирается на серверах GitHub, проходит автотесты в headless Chrome и только потом выкладывается сюда.
 
-Скачай `index.html` — игра работает и офлайн, просто открой файл в браузере.
+[Скачай `index.html`](https://github.com/DevONE-HoPe/bozhestvo-game/raw/main/index.html) — игра работает и офлайн, просто открой файл в браузере.
 
 ---
 
