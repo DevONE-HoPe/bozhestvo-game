@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://devone-hope.github.io/bozhestvo-game/sitemap.xml
