@@ -1162,7 +1162,7 @@ function dipStep(){
       else if(d.st==='peace'&&!d.signed&&r>5&&Math.random()<.2)offer(a,'peace');
       else if(d.st==='peace'&&d.signed&&r>=55&&Math.random()<.15)offer(a,'ally');
       else if(d.st!=='war'&&!d.trade&&r>=25&&Math.random()<.1)offer(a,'trade');
-      else if(d.st!=='ally'&&ratio>1.5&&S.time>PEACE&&Math.random()<.06)offer(a,'tribute');
+      else if(d.st==='peace'&&ratio>1.5&&S.time>PEACE&&Math.random()<.06)offer(a,'tribute');
       else if(d.st==='ally'&&Math.random()<.06){if(S.pl[a].gold>60){S.pl[a].gold-=30;S.pl[0].gold+=30;msg('Союзник '+OWN[a].n+' прислал дар: 30 золота','#7bd36b')}}
       else if(d.st==='peace'&&S.time>PEACE&&((r<-25&&ratio>1.2&&Math.random()<.1)||(r<10&&ratio>1.8&&!others(a).some(c=>war(a,c))&&Math.random()<.04)))declare(a,0)}
     for(let b=a+1;b<n;b++){if(!S.pl[b].alive)continue;const d=D(a,b),r=(S.rel[a][b]+S.rel[b][a])/2;
@@ -1174,11 +1174,13 @@ function dipStep(){
 }
 const OFT={peace:'предлагает мир',ally:'предлагает союз: будем воевать с врагами друг друга',trade:'предлагает торговый договор: золото обеим сторонам',tribute:'требует дань: 60 золота. Откажешь — отношения сильно ухудшатся'};
 function offer(a,type){S.offers.push({from:a,type,txt:OWN[a].n+' '+OFT[type],till:S.time+25});showOffer()}
-function showOffer(){const box=$('#offer');S.offers=S.offers.filter(f=>S.pl[f.from].alive&&f.till>S.time);const f=S.offers[0];
+// Послание теряет смысл, если обстановка изменилась: дань, торговля и союз — не во время войны, мир — только пока воюем или перемирие не подписано
+function offerOk(f){const d=D(f.from,0);return f.type==='peace'?d.st==='war'||!d.signed:d.st!=='war'}
+function showOffer(){const box=$('#offer');S.offers=S.offers.filter(f=>S.pl[f.from].alive&&f.till>S.time&&offerOk(f));const f=S.offers[0];
   if(!f||S.over){box.hidden=true;box.dataset.k='';return}const k=f.from+f.type+f.till;if(box.dataset.k===k)return;box.dataset.k=k;box.hidden=false;box.style.setProperty('--c',OWN[f.from].c);
   box.innerHTML=`<p><b>Послание.</b> ${f.txt}.</p><div><button data-ans="1">Принять</button><button data-ans="0" class="s">Отказать</button></div>`}
 function signPeace(a){const d=D(0,a);if(d.st==='peace'){d.signed=true;msg('Договор о мире с '+OWN[a].n+' подписан','#7bd36b')}else setSt(0,a,'peace')}
-$('#offer').addEventListener('click',e=>{const b=e.target.closest('[data-ans]');if(!b||!S)return;const f=S.offers.shift();if(!f)return;const a=f.from,pl=S.pl[0];
+$('#offer').addEventListener('click',e=>{const b=e.target.closest('[data-ans]');if(!b||!S)return;const f=S.offers.shift();if(!f||!offerOk(f)){$('#offer').dataset.k='';showOffer();return}const a=f.from,pl=S.pl[0];
   if(b.dataset.ans==='1'){
     if(f.type==='peace'){signPeace(a);addRel(a,0,5)}else if(f.type==='ally')setSt(0,a,'ally');else if(f.type==='trade'){D(0,a).trade=true;msg('Торговля с '+OWN[a].n+' началась','#7bd36b')}
     else if(f.type==='tribute'){if(pl.gold>=60){pl.gold-=60;S.pl[a].gold+=60;addRel(a,0,10);msg('Дань уплачена','#c9b48a')}else{msg('Не хватает золота на дань','#e0261a');addRel(a,0,-15)}}}
@@ -1197,7 +1199,7 @@ function dpAct(act,a){
     if(bad)res='«Мы не пойдём против своих союзников.»';else if(sc>=45){setSt(0,a,'ally');res='Союз заключён! Союзник будет воевать с твоими врагами'}else res=`«Мы ещё не настолько доверяем тебе.» Нужна оценка 45 (сейчас ${Math.round(sc)})`}
   else if(act==='trade'){if(r>=15){d.trade=true;addRel(a,0,5);res='Торговый договор подписан: обе стороны получают золото'}else res=`«Торговать с тобой? Нет.» Нужно отношение 15+ (сейчас ${Math.round(r)})`}
   else if(act==='untrade'){d.trade=false;addRel(a,0,-10);res='Торговля прекращена'}
-  else if(act==='tribute'){if(ratio>1.6&&r>-60){const w=Math.max(0,Math.min(80,Math.floor(S.pl[a].gold)));S.pl[a].gold-=w;pl.gold+=w;addRel(a,0,-20);res=`Королевство ${OWN[a].n} испугалось и заплатило ${w} золота. Но затаило обиду (−20)`}
+  else if(act==='tribute'){if(d.st==='war')res='«Мы воюем, какая дань? Сначала заключи мир.»';else if(ratio>1.6&&r>-60){const w=Math.max(0,Math.min(80,Math.floor(S.pl[a].gold)));S.pl[a].gold-=w;pl.gold+=w;addRel(a,0,-20);res=`Королевство ${OWN[a].n} испугалось и заплатило ${w} золота. Но затаило обиду (−20)`}
     else{addRel(a,0,-12);res=`«Ты нам не указ!» Дань платят тому, кто сильнее в 1,6 раза (сейчас ×${ratio.toFixed(1)})`;if(S.rel[a][0]<-40&&!war(0,a)&&S.time>PEACE){declare(a,0);res+='. И объявило тебе войну!'}}}
   else if(act==='war'){declare(0,a);res='Война объявлена'}
   else if(act==='unally'){setSt(0,a,'peace','Союз с '+OWN[a].n+' расторгнут');addRel(a,0,-25);res='Союз расторгнут'}
@@ -1224,7 +1226,7 @@ function dipRender(){const keep=ovKeep('dip'),me=pw(0),pl=S.pl[0];
     ${d.st==='war'?B('peace','Предложить мир',false,'g'):''}${st==='truce'?B('peace','Подписать мир навсегда',false,'g'):''}
     ${d.st==='peace'&&d.signed?B('ally','Предложить союз',false,'g'):''}
     ${d.st!=='war'?(d.trade?B('untrade','Прекратить торговлю'):B('trade','Торговый договор',false,'g')):''}
-    ${B('tribute','Потребовать дань')}
+    ${d.st!=='war'?B('tribute','Потребовать дань'):''}
     ${d.st==='ally'?B('unally','Расторгнуть союз',false,'r'):''}${d.st!=='war'?B('war','Объявить войну',S.time<PEACE,'r'):''}</div>
     ${S.resp[a]?`<div class="resp">${S.resp[a]}</div>`:''}</section>`}).join('')||'<p>Соперников не осталось.</p>'}</div></div>`;keep();
 }
