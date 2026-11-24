@@ -278,6 +278,10 @@ body.menu #dcap.on{opacity:.85;transform:none}
   body.menu #ov{place-items:center start;padding-left:max(24px,6vw)}
   body.menu #ov{background:linear-gradient(90deg,rgba(9,4,8,.88) 0,rgba(9,4,8,.6) 38%,rgba(9,4,8,.32) 68%,rgba(9,4,8,.5)),radial-gradient(ellipse 70% 80% at 68% 50%,transparent 35%,rgba(9,4,8,.8))}
 }
+/* таблица лидеров (сборка для Яндекс Игр) */
+.ylb{width:100%;border-collapse:collapse;margin-top:8px}.ylb td{padding:6px 4px;border-top:1px solid rgba(0,0,0,.08)}
+.ylb td:first-child{width:2.5em;text-align:center;font-weight:700}.ylb td:last-child{text-align:right;font-weight:700}
+.ylb img{width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:8px}.ylb tr.me{background:rgba(232,185,35,.18)}
 </style>
 </head>
 <body>
@@ -312,8 +316,12 @@ const SFXD={"amb":"data:audio/mpeg;base64,SUQzBAAAAAEGCFRTU0UAAAANAAADTGF2ZjYzLj
 /* ---------- платформа: обычный сайт (GitHub Pages) ----------
    Сборка подставляет сюда один из файлов src/platform/*.js (node build.mjs [web|yandex]).
    Интерфейс PF общий: ready() — меню готово к игре, play(on) — идёт ли сейчас партия,
-   hold — платформа велела замереть (реклама), lang — язык игрока. На сайте всё это пустышки. */
-const PF={id:'web',hold:false,lang:'ru',ready(){},play(){}};
+   hold — платформа велела замереть (реклама), lang — язык игрока,
+   brk(over) — партия закончилась или игрок вышел в меню (место для рекламы между партиями),
+   result(win,kind) — итог партии, вернёт HTML для финального экрана (очки славы),
+   menuHTML()/econHTML() — дополнительные кнопки в главном меню и в Казне,
+   click(e) — клики по этим кнопкам (true — обработано). На сайте всё это пустышки. */
+const PF={id:'web',hold:false,lang:'ru',ready(){},play(){},brk(){},result(){return''},menuHTML(){return''},econHTML(){return''},click(){return false}};
 // мини-приложение: офлайн-запуск с рабочего стола (только по https и на локальном сервере)
 if('serviceWorker' in navigator&&(location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 const R3=Math.sqrt(3),SZ=40,STEP=1.5,PEACE=90;
@@ -1130,6 +1138,7 @@ function econRender(){const keep=ovKeep('econ'),pl=S.pl[0],A=armyPlan(0),br=S.br
   <h2>Наёмники</h2><p class="small">10 воинов сразу появятся в столице. Каждый следующий отряд на 30% дороже. Наёмникам, как и всем воинам, платится жалованье.</p>
   ${A.have+10>A.cap?`<p class="small neg">Сверх предела казны: жалованье наёмников уведёт доход в минус, пока армия не поредеет в боях.</p>`:''}
   <button class="go" data-hire ${pl.gold<hireP(0)?'disabled':''}>Нанять 10 воинов за ${hireP(0)} золота</button>
+  ${PF.econHTML()}
   <h2>Расходы</h2><p class="small">Каждый воин стоит ${(UPS/STEP).toFixed(2)} золота в секунду, каждое здание ${(UPB/STEP).toFixed(2)}. Если казна уйдёт в минус, воины начнут дезертировать. Любое здание можно остановить в его карточке: например, чтобы кузница не съедала дерево, пока копишь на стройку.</p></div>`;keep()}
 
 /* ---------- дипломатия ---------- */
@@ -1506,21 +1515,23 @@ function setup(){paused=true;demoStart();ov.hidden=false;ov.innerHTML=`<div clas
   <h2>Сложность</h2>${seg('diff',['Лёгкая','Обычная','Тяжёлая'])}<p class="small">Сложность меняет только то, как часто и решительно действуют соперники.</p>
   <button class="go" data-go>Создать мир</button>
   ${(()=>{const i=savedInfo();return i?`<button class="go s" data-cont>Продолжить сохранённую игру<br><small>${new Date(i.d.at).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${SIZES[i.d.OPT.size].n.toLowerCase()} карта · ${fmt(i.d.S.time)} в игре</small></button>`:''})()}
-  <button class="go s" data-imp>Загрузить из кода сохранения</button>
+  <button class="go s" data-imp>Загрузить из кода сохранения</button>${PF.menuHTML()}
   <details><summary>Правила игры ▾</summary>${rules()}</details></div>`}
 function help(){paused=true;ui();ov.hidden=false;ov.innerHTML=`<div class="card"><div class="th"><h1>Меню</h1><button data-close>Играть</button></div>
   <div class="btns" style="grid-template-columns:1fr 1fr"><button class="exit" data-new style="grid-column:1/-1">↩ В главное меню<small>игра сохранится — её можно продолжить оттуда</small></button><button data-save>Сохранить игру</button><button class="s" data-code>Код сохранения</button><button class="s" data-hints style="grid-column:1/-1">Подсказки-задачи: ${OPT.hints?'вкл — скрыть':'выкл — показать'}</button></div>
   <p class="small" style="margin-top:8px">Это меню открывается кнопкой ☰ справа вверху или клавишей Esc. Игра сама сохраняется каждые 20 секунд в этом браузере. Код сохранения — запасной способ: скопируй его в заметки, чтобы перенести игру или не потерять её.</p>${rules()}</div>`}
 function end(win,kind){S.over=true;if(DEMO.on)return;sfx(win?'win':'lose');sel=null;mode=null;sheet();$('#offer').hidden=true;try{localStorage.removeItem(SAVE_KEY)}catch(e){}
-  setTimeout(()=>{ov.hidden=false;ov.innerHTML=`<div class="card"><h1>${kind==='dip'?'Глава союза королевств':win?'Ты единый бог':'Царство пало'}</h1>
-  <p>${kind==='dip'?'Все королевства признали тебя главой союза':win?'Все соперники повержены':'Твою столицу захватили'} за ${fmt(S.time)}. Изучено технологий: ${S.pl[0].tech.size} из ${TECH.length}.</p>
+  const res=PF.result(win,kind);setTimeout(()=>{ov.hidden=false;ov.innerHTML=`<div class="card"><h1>${kind==='dip'?'Глава союза королевств':win?'Ты единый бог':'Царство пало'}</h1>
+  <p>${kind==='dip'?'Все королевства признали тебя главой союза':win?'Все соперники повержены':'Твою столицу захватили'} за ${fmt(S.time)}. Изучено технологий: ${S.pl[0].tech.size} из ${TECH.length}.</p>${res}
   <button class="go" data-new>Новый мир</button></div>`},900)}
 ov.addEventListener('click',e=>{
+  if(PF.click(e))return;
   const o=e.target.closest('[data-o]');
   if(o){OPT[o.dataset.o]=+o.dataset.v;try{localStorage.setItem('bozh-opt',JSON.stringify(OPT))}catch(x){}o.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===o));return}
   if(e.target.closest('[data-msnd]')){if(!(SND.on&&sndJustUnlocked()))sndToggle();e.target.closest('[data-msnd]').textContent=SND.on?'🔊':'🔇';return}
   if(e.target.closest('[data-go]')){demoStop();ov.hidden=true;paused=false;gen();return}
-  if(e.target.closest('[data-new]')){if(S&&!S.over)saveGame(true);setup();return}
+  // выход из партии (в т.ч. после победы/поражения) — PF.brk(): площадка может показать рекламу между партиями
+  if(e.target.closest('[data-new]')){const fromGame=!!S&&!DEMO.on,over=!!S?.over;if(S&&!S.over)saveGame(true);setup();if(fromGame)PF.brk(over);return}
   if(e.target.closest('[data-cont]')){const i=savedInfo();if(i)try{demoStop();restore(i.s);ov.hidden=true;paused=false}catch(x){demoStart(true)}return}
   if(e.target.closest('[data-save]')){saveGame(false);return}
   if(e.target.closest('[data-hints]')){setHints(OPT.hints?0:1);e.target.closest('[data-hints]').textContent='Подсказки-задачи: '+(OPT.hints?'вкл — скрыть':'выкл — показать');return}
