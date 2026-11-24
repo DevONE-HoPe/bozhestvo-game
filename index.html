@@ -320,8 +320,10 @@ const SFXD={"amb":"data:audio/mpeg;base64,SUQzBAAAAAEGCFRTU0UAAAANAAADTGF2ZjYzLj
    brk(over) — партия закончилась или игрок вышел в меню (место для рекламы между партиями),
    result(win,kind) — итог партии, вернёт HTML для финального экрана (очки славы),
    menuHTML()/econHTML() — дополнительные кнопки в главном меню и в Казне,
-   click(e) — клики по этим кнопкам (true — обработано). На сайте всё это пустышки. */
-const PF={id:'web',hold:false,lang:'ru',ready(){},play(){},brk(){},result(){return''},menuHTML(){return''},econHTML(){return''},click(){return false}};
+   click(e) — клики по этим кнопкам (true — обработано),
+   begin() — партия началась или продолжена (сюда приходит золото, накопленное в меню),
+   sheetAd(short) — в карточке своей провинции, short=true — на что-то не хватает ресурсов. На сайте всё это пустышки. */
+const PF={id:'web',hold:false,lang:'ru',ready(){},play(){},brk(){},result(){return''},menuHTML(){return''},econHTML(){return''},click(){return false},begin(){},sheetAd(){}};
 // мини-приложение: офлайн-запуск с рабочего стола (только по https и на локальном сервере)
 if('serviceWorker' in navigator&&(location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname)))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 const R3=Math.sqrt(3),SZ=40,STEP=1.5,PEACE=90;
@@ -433,7 +435,7 @@ const avail=(o,t)=>!ht(o,t.id)&&t.req.every(r=>ht(o,r))&&S.pl[o].era>=t.era;
      gameEnd      — победа или поражение                                         {result: win|dip|lose, min, era, diff, size}
      gameExit     — вышел из идущей партии в главное меню                         {min, era}
      leave        — закрыл вкладку/игру (best effort, pagehide)                   {where: menu|game|end, min, era}
-     giftStart / giftDone / giftFail — «Дар богов»: начал смотреть / досмотрел / не досмотрел или ошибка
+     giftStart / giftDone / giftFail — «Дар богов»: начал смотреть / досмотрел / не досмотрел или ошибка {gold, where: econ|sheet|menu}
      adFull       — показана полноэкранная реклама между партиями (только Яндекс)
    Привязка к пользователю: свой постоянный id в localStorage → setUserID и userParams.UserID;
    на Яндексе дополнительно userParams.ya_id (id аккаунта, если вошёл).
@@ -1044,7 +1046,7 @@ function sheet(){
   let body='';
   if(p.o===0){
     const L=LV[p.lv+1],Wl=WALL[p.wall+1];
-    body+=`<div class="note" id="pdang"></div><div class="sec">Развитие поселения</div>`;
+    body+=`<div class="note" id="pdang"></div><div id="pad"></div><div class="sec">Развитие поселения</div>`;
     body+=L?`<button class="opt" data-up="lv"><img src="${iconURL('up')}" alt=""><div><b>Улучшить до: ${L.n}</b><span>Жителей до ${L.cap+(p.cap?15:0)}, работа ×${L.m}, оборона ×${L.d} · ${cs(costOf(0,L.cost))}${L.era>me.era?' · нужен '+ERA[L.era].n:''}</span></div></button>`:`<div class="note">Поселение развито до максимума.</div>`;
     body+=Wl?`<button class="opt" data-up="wall"><img src="${iconURL('wall')}" alt=""><div><b>${Wl.n}</b><span>Оборона ×${Wl.m}${ht(0,'fort')?' (+40% от Крепостного дела)':''} · ${cs(costOf(0,Wl.cost))}${Wl.era>me.era?' · нужен '+ERA[Wl.era].n:''}</span></div></button>`:`<div class="note">Каменные стены уже стоят.</div>`;
     const opts=Object.entries(BLD).filter(([,B])=>B.t===p.t);
@@ -1086,9 +1088,12 @@ function sheetUpd(){
       S.target===p.i&&S.tgEff!=null?'Цель далеко: ударная группа сначала пробивает путь через соседнюю провинцию (белая стрелка).':
       S.target===p.i?'Пути к цели нет: мешают мирные соседи. Отмени атаку или объяви им войну.':
       near?`Твоих воинов рядом: ${Math.floor(near)}, удар ≈ ${Math.round(ap)}${rm<1?' (через реку −30%)':''} против обороны ${Math.round(dp)}. Шансы: ${ap>dp*1.3?'высокие':ap>dp?'равные':'низкие — подкопи армию'}`:'Рядом нет твоих провинций — армия пойдёт через ближайшую границу')}
-  sheetEl.querySelectorAll('[data-b]').forEach(b=>{const B=BLD[b.dataset.b];setDis(b,!(can(S.pl[0],B.cost)&&S.pl[0].era>=B.era))});
-  sheetEl.querySelectorAll('[data-clr]').forEach(b=>{const C=CLR[p.t];setDis(b,!C||!can(S.pl[0],C.cost))});
-  sheetEl.querySelectorAll('[data-up]').forEach(b=>{const X=b.dataset.up==='lv'?LV[p.lv+1]:WALL[p.wall+1];setDis(b,!X||!(can(S.pl[0],costOf(0,X.cost))&&S.pl[0].era>=X.era))});
+  // short — что-то уже доступно по веку, но не хватает ресурсов (площадка может предложить золото за рекламу)
+  const me=S.pl[0];let short=false;const chk=(b,cost,era)=>{const ok=me.era>=era,c=can(me,cost);if(ok&&!c)short=true;setDis(b,!(ok&&c))};
+  sheetEl.querySelectorAll('[data-b]').forEach(b=>{const B=BLD[b.dataset.b];chk(b,B.cost,B.era)});
+  sheetEl.querySelectorAll('[data-clr]').forEach(b=>{const C=CLR[p.t];if(C)chk(b,C.cost,0);else setDis(b,true)});
+  sheetEl.querySelectorAll('[data-up]').forEach(b=>{const X=b.dataset.up==='lv'?LV[p.lv+1]:WALL[p.wall+1];if(X)chk(b,costOf(0,X.cost),X.era);else setDis(b,true)});
+  if(p.o===0)PF.sheetAd(short);
   sheetEl.querySelectorAll('[data-m]').forEach(b=>{const M=MIR[b.dataset.m];setDis(b,S.pl[0].faith<mcost(0,b.dataset.m)||S.pl[0].era<M.era||!war(0,p.o))});
   sheetEl.querySelectorAll('[data-atk]').forEach(b=>{setDis(b,p.o>0&&S.time<PEACE&&S.target!==sel)});
 }
@@ -1108,6 +1113,7 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape'||e.target.closest('i
   const c=ov.querySelector('[data-close]');if(c&&!DEMO.on)c.click()});
 sheetEl.addEventListener('click',e=>{
   if(!S||S.over)return;
+  if(PF.click(e))return;
   if(e.target.closest('[data-x]')){sel=null;sheet();return}
   const b=e.target.closest('button');if(!b||b.disabled)return;const pl=S.pl[0],p=P[sel];
   if(b.dataset.b){const B=BLD[b.dataset.b];if(!can(pl,B.cost))return;pay(pl,B.cost);p.b=b.dataset.b;sfx('build');boom(p,'#fff6d0');ftxt(p,B.n+' построена','#fff');sheet();ui()}
@@ -1577,17 +1583,17 @@ ov.addEventListener('click',e=>{
   const o=e.target.closest('[data-o]');
   if(o){OPT[o.dataset.o]=+o.dataset.v;try{localStorage.setItem('bozh-opt',JSON.stringify(OPT))}catch(x){}o.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===o));return}
   if(e.target.closest('[data-msnd]')){if(!(SND.on&&sndJustUnlocked()))sndToggle();e.target.closest('[data-msnd]').textContent=SND.on?'🔊':'🔇';return}
-  if(e.target.closest('[data-go]')){demoStop();ov.hidden=true;paused=false;gen();MT.create();return}
+  if(e.target.closest('[data-go]')){demoStop();ov.hidden=true;paused=false;gen();MT.create();PF.begin();return}
   // выход из партии (в т.ч. после победы/поражения) — PF.brk(): площадка может показать рекламу между партиями
   if(e.target.closest('[data-new]')){const fromGame=!!S&&!DEMO.on,over=!!S?.over;if(S&&!S.over)saveGame(true);if(fromGame)MT.exit();setup();if(fromGame)PF.brk(over);return}
-  if(e.target.closest('[data-cont]')){const i=savedInfo();if(i)try{demoStop();restore(i.s);ov.hidden=true;paused=false;MT.cont('save')}catch(x){demoStart(true)}return}
+  if(e.target.closest('[data-cont]')){const i=savedInfo();if(i)try{demoStop();restore(i.s);ov.hidden=true;paused=false;MT.cont('save');PF.begin()}catch(x){demoStart(true)}return}
   if(e.target.closest('[data-save]')){saveGame(false);return}
   if(e.target.closest('[data-hints]')){setHints(OPT.hints?0:1);e.target.closest('[data-hints]').textContent='Подсказки-задачи: '+(OPT.hints?'вкл — скрыть':'выкл — показать');return}
   if(e.target.closest('[data-code]')&&S){ov.innerHTML=`<div class="card"><div class="th"><h1>Код</h1><button data-close>Играть</button></div><p class="small">Это вся твоя игра одной строкой. Скопируй и сохрани в заметки. Загрузить: «В главное меню» → «Загрузить из кода сохранения».</p><textarea id="codeT" readonly>${toCode(snapshot())}</textarea><div class="btns" style="grid-template-columns:1fr"><button data-copy>Скопировать</button></div></div>`;return}
   if(e.target.closest('[data-copy]')){const t=$('#codeT');t.select();try{navigator.clipboard.writeText(t.value).then(()=>msg('Код скопирован','#7bd36b'),()=>msg('Выдели текст и скопируй вручную','#ffb347'))}catch(x){msg('Выдели текст и скопируй вручную','#ffb347')}return}
   if(e.target.closest('[data-imp]')){ov.innerHTML=`<div class="card"><div class="th"><h1>Загрузка</h1><button class="s" data-new>Назад</button></div><p class="small">Вставь код сохранения:</p><textarea id="impT" placeholder="Вставь код сюда"></textarea><div class="btns" style="grid-template-columns:1fr"><button data-load>Загрузить</button></div><p class="small" id="impE"></p></div>`;return}
   if(e.target.closest('[data-load]')){let str;try{str=fromCode($('#impT').value.trim());JSON.parse(str)}catch(x){$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.';return}
-    try{demoStop();restore(str);ov.hidden=true;paused=false;MT.cont('code');msg('Игра загружена','#7bd36b')}catch(x){demoStart(true);ov.hidden=false;$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.'}return}
+    try{demoStop();restore(str);ov.hidden=true;paused=false;MT.cont('code');msg('Игра загружена','#7bd36b');PF.begin()}catch(x){demoStart(true);ov.hidden=false;$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.'}return}
   if(e.target.closest('[data-close]')){ov.hidden=true;paused=false;ui();return}
   if(S&&e.target.closest('[data-draft]')){S.pl[0].draft=+e.target.closest('[data-draft]').dataset.draft;econRender();ui();return}
   if(S&&e.target.closest('[data-tax]')){S.pl[0].tax=+e.target.closest('[data-tax]').dataset.tax;econRender();ui();return}
