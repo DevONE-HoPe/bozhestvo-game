@@ -422,6 +422,53 @@ const lvName=p=>p.cap?'Столица':LV[p.lv].n;
 const ais=()=>S.pl.map((p,i)=>i).slice(1);
 const avail=(o,t)=>!ht(o,t.id)&&t.req.every(r=>ht(o,r))&&S.pl[o].era>=t.era;
 
+/* ---------- аналитика: Яндекс Метрика (счётчик 114648443, общий для сайта и Яндекс Игр) ----------
+   Все события — reachGoal с параметрами; в Метрике под каждое имя заведена цель «JavaScript-событие»
+   (без цели параметры не попадают в отчёт «Параметры визитов»). Платформа различается параметром platform.
+     menuOpen     — открылось главное меню (первый раз за визит)                 {platform, returning}
+     worldCreate  — нажал «Создать мир»                                          {diff, size, rivals}
+     gameContinue — продолжил сохранённую игру / загрузил по коду                {how, min, era}
+     gameMin      — партия дошла до N-й минуты игрового времени (1,3,5,10,…)     {min, era, diff, size}
+     eraReach     — игрок вступил в новый век                                    {era, min}
+     gameEnd      — победа или поражение                                         {result: win|dip|lose, min, era, diff, size}
+     gameExit     — вышел из идущей партии в главное меню                         {min, era}
+     leave        — закрыл вкладку/игру (best effort, pagehide)                   {where: menu|game|end, min, era}
+     giftStart / giftDone / giftFail — «Дар богов»: начал смотреть / досмотрел / не досмотрел или ошибка
+     adFull       — показана полноэкранная реклама между партиями (только Яндекс)
+   Привязка к пользователю: свой постоянный id в localStorage → setUserID и userParams.UserID;
+   на Яндексе дополнительно userParams.ya_id (id аккаунта, если вошёл).
+   На localhost / file:// счётчик не грузится: вызовы копятся в window.ym.a (их проверяет tools/test.mjs). */
+const MT={id:114648443,on:false,uid:'',menuSent:false,ms:0,where:'menu',
+  MIN:[1,3,5,10,15,20,30,45,60,90,120],
+  init(){
+    try{this.uid=localStorage.getItem('bozh-uid')||''}catch(e){}
+    if(!this.uid){this.uid=(crypto.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2));try{localStorage.setItem('bozh-uid',this.uid)}catch(e){}}
+    const live=/^https?:$/.test(location.protocol)&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)||/[?&]ym=1\b/.test(location.search);
+    // стандартная очередь ym: вызовы до загрузки tag.js не теряются
+    window.ym=window.ym||function(){(window.ym.a=window.ym.a||[]).push(arguments)};window.ym.l=1*new Date();
+    if(live){const s=document.createElement('script');s.async=true;s.src='https://mc.yandex.ru/metrika/tag.js';s.onerror=()=>{};document.head.appendChild(s)}
+    this.on=true;
+    this.call('init',{clickmap:false,trackLinks:true,accurateTrackBounce:true,webvisor:false,params:{platform:PF.id},userParams:{UserID:this.uid,platform:PF.id}});
+    this.call('setUserID',this.uid);
+    addEventListener('pagehide',()=>this.goal('leave',{where:this.where,...this.st()}))},
+  call(...a){if(!this.on)return;try{window.ym(this.id,...a)}catch(e){}},
+  goal(name,p={}){this.call('reachGoal',name,{platform:PF.id,...p})},
+  user(p){this.call('userParams',{UserID:this.uid,...p})},
+  // игровая минута и век текущей партии
+  st(){return S&&!DEMO.on?{min:Math.floor(S.time/60),era:S.pl[0].era}:{}},
+  opts(){return{diff:['easy','normal','hard'][OPT.diff]||String(OPT.diff),size:['small','medium','large'][OPT.size]||String(OPT.size),rivals:OPT.ai}},
+  menu(){this.where='menu';if(this.menuSent)return;this.menuSent=true;
+    let ret=false;try{ret=!!localStorage.getItem('bozh-seen');localStorage.setItem('bozh-seen','1')}catch(e){}
+    this.goal('menuOpen',{returning:ret?'yes':'no'})},
+  create(){this.where='game';this.ms=0;const o=this.opts();this.goal('worldCreate',o);this.call('params',{lastWorld:o})},
+  cont(how){this.where='game';const m=S.time/60;this.ms=this.MIN.filter(x=>x<=m).length;this.goal('gameContinue',{how,...this.st()})},
+  // раз в кадр из цикла: отметки игровых минут
+  tick(){if(!S||DEMO.on||S.over)return;const m=S.time/60;
+    while(this.ms<this.MIN.length&&m>=this.MIN[this.ms]){const o=this.opts();this.goal('gameMin',{min:this.MIN[this.ms],era:S.pl[0].era,diff:o.diff,size:o.size});this.ms++}},
+  era(n){this.goal('eraReach',{...this.st(),era:n})},
+  end(win,kind){this.where='end';const o=this.opts();this.goal('gameEnd',{result:kind==='dip'?'dip':win?'win':'lose',...this.st(),diff:o.diff,size:o.size})},
+  exit(){if(this.where==='game')this.goal('gameExit',this.st());this.where='menu'}};
+MT.init();
 /* ---------- мир ---------- */
 function terrain(){
   const sd=[],n=Math.round(COLS*ROWS/5),W8=[['plain',.42],['forest',.26],['mount',.17],['crys',.07],['water',.08]];
@@ -1261,7 +1308,7 @@ bar.addEventListener('click',e=>{
   else if(a==='tech'){techUI();return}
   else if(a==='stance'){S.stance[0]=S.stance[0]==='def'?'att':'def';if(S.stance[0]==='def')S.target=null;
     msg(S.stance[0]==='att'?'Наступление: армия бьёт самых слабых соседей':'Оборона: армия стоит на границе и не нападает на королевства',OWN[0].c);sheetUpd()}
-  else if(a==='era'){const E=ERA[pl.era+1];if(E&&can(pl,E.cost)){pay(pl,E.cost);pl.era++;sfx('tech');msg('Ты вступил в '+E.n+'! Армия ×'+E.m+', открыты новые изучения',OWN[0].c)}}
+  else if(a==='era'){const E=ERA[pl.era+1];if(E&&can(pl,E.cost)){pay(pl,E.cost);pl.era++;MT.era(pl.era);sfx('tech');msg('Ты вступил в '+E.n+'! Армия ×'+E.m+', открыты новые изучения',OWN[0].c)}}
   else if(a==='bless'){const c=mcost(0,'bless');if(pl.faith>=c){pl.faith-=c;pl.bless=S.time+15;sfx('tech');P.forEach(p=>{if(p.o===0)boom(p,'#ffe28a')});msg('Благодать: воины сильнее на 50% на 15 секунд',OWN[0].c)}}
   else{mode=mode===a?null:a}
   ui();
@@ -1374,6 +1421,7 @@ function loop(ts){
   const dt=Math.min(.1,(ts-last)/1000||0);last=ts;
   // идёт ли партия (для GameplayAPI на Яндексе): не меню, не пауза, не открытое окно и не конец
   PF.play(!DEMO.on&&!!S&&!S.over&&!paused&&speed>0&&ov.hidden&&!document.hidden);
+  MT.tick();
   if(DEMO.on){demoTick(dt);if(ts-lastDraw>=DEMO_IV){draw();lastDraw=ts}requestAnimationFrame(loop);return}
   if(S&&!S.over&&!paused&&speed>0){S.time+=dt*speed;acc+=dt*speed;while(acc>=STEP&&!S.over){acc-=STEP;step()}
     const due=S.pend.filter(b=>b.at<=S.time);S.pend=S.pend.filter(b=>b.at>S.time);due.forEach(b=>{if(!S.over)resolve(b)});}
@@ -1509,7 +1557,7 @@ function rules(){return`<h2>Цель</h2><p>Ты бог синего корол�
   <li>Первые 1,5 минуты действует перемирие.</li></ul>
   <h2>Управление</h2><p>Тапни провинцию, чтобы открыть её карточку. Карту двигай пальцем, приближай щипком или кнопками +/−.</p><h2>Значки</h2>${legend()}`}
 const seg=(k,arr,off=0)=>`<div class="seg">${arr.map((n,i)=>`<button data-o="${k}" data-v="${i+off}" class="${OPT[k]===i+off?'on':''}">${n}</button>`).join('')}</div>`;
-function setup(){paused=true;demoStart();ov.hidden=false;ov.innerHTML=`<div class="card menu"><button class="msnd" data-msnd aria-label="Звук">${SND.on?'🔊':'🔇'}</button><h1>Божество</h1><div class="tag">Стань богом своего королевства</div><p>Ты бог. Твоё королевство растёт само, а ты направляешь его. Каждый раз мир создаётся заново: озёра, реки, леса и горы. Соперники играют честно, по тем же правилам и без бонусов к добыче.</p>
+function setup(){paused=true;demoStart();MT.menu();ov.hidden=false;ov.innerHTML=`<div class="card menu"><button class="msnd" data-msnd aria-label="Звук">${SND.on?'🔊':'🔇'}</button><h1>Божество</h1><div class="tag">Стань богом своего королевства</div><p>Ты бог. Твоё королевство растёт само, а ты направляешь его. Каждый раз мир создаётся заново: озёра, реки, леса и горы. Соперники играют честно, по тем же правилам и без бонусов к добыче.</p>
   <h2>Размер мира</h2>${seg('size',SIZES.map(s=>s.n))}
   <h2>Соперники</h2>${seg('ai',['1','2','3','4'],1)}
   <h2>Сложность</h2>${seg('diff',['Лёгкая','Обычная','Тяжёлая'])}<p class="small">Сложность меняет только то, как часто и решительно действуют соперники.</p>
@@ -1520,7 +1568,7 @@ function setup(){paused=true;demoStart();ov.hidden=false;ov.innerHTML=`<div clas
 function help(){paused=true;ui();ov.hidden=false;ov.innerHTML=`<div class="card"><div class="th"><h1>Меню</h1><button data-close>Играть</button></div>
   <div class="btns" style="grid-template-columns:1fr 1fr"><button class="exit" data-new style="grid-column:1/-1">↩ В главное меню<small>игра сохранится — её можно продолжить оттуда</small></button><button data-save>Сохранить игру</button><button class="s" data-code>Код сохранения</button><button class="s" data-hints style="grid-column:1/-1">Подсказки-задачи: ${OPT.hints?'вкл — скрыть':'выкл — показать'}</button></div>
   <p class="small" style="margin-top:8px">Это меню открывается кнопкой ☰ справа вверху или клавишей Esc. Игра сама сохраняется каждые 20 секунд в этом браузере. Код сохранения — запасной способ: скопируй его в заметки, чтобы перенести игру или не потерять её.</p>${rules()}</div>`}
-function end(win,kind){S.over=true;if(DEMO.on)return;sfx(win?'win':'lose');sel=null;mode=null;sheet();$('#offer').hidden=true;try{localStorage.removeItem(SAVE_KEY)}catch(e){}
+function end(win,kind){S.over=true;if(DEMO.on)return;MT.end(win,kind);sfx(win?'win':'lose');sel=null;mode=null;sheet();$('#offer').hidden=true;try{localStorage.removeItem(SAVE_KEY)}catch(e){}
   const res=PF.result(win,kind);setTimeout(()=>{ov.hidden=false;ov.innerHTML=`<div class="card"><h1>${kind==='dip'?'Глава союза королевств':win?'Ты единый бог':'Царство пало'}</h1>
   <p>${kind==='dip'?'Все королевства признали тебя главой союза':win?'Все соперники повержены':'Твою столицу захватили'} за ${fmt(S.time)}. Изучено технологий: ${S.pl[0].tech.size} из ${TECH.length}.</p>${res}
   <button class="go" data-new>Новый мир</button></div>`},900)}
@@ -1529,17 +1577,17 @@ ov.addEventListener('click',e=>{
   const o=e.target.closest('[data-o]');
   if(o){OPT[o.dataset.o]=+o.dataset.v;try{localStorage.setItem('bozh-opt',JSON.stringify(OPT))}catch(x){}o.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===o));return}
   if(e.target.closest('[data-msnd]')){if(!(SND.on&&sndJustUnlocked()))sndToggle();e.target.closest('[data-msnd]').textContent=SND.on?'🔊':'🔇';return}
-  if(e.target.closest('[data-go]')){demoStop();ov.hidden=true;paused=false;gen();return}
+  if(e.target.closest('[data-go]')){demoStop();ov.hidden=true;paused=false;gen();MT.create();return}
   // выход из партии (в т.ч. после победы/поражения) — PF.brk(): площадка может показать рекламу между партиями
-  if(e.target.closest('[data-new]')){const fromGame=!!S&&!DEMO.on,over=!!S?.over;if(S&&!S.over)saveGame(true);setup();if(fromGame)PF.brk(over);return}
-  if(e.target.closest('[data-cont]')){const i=savedInfo();if(i)try{demoStop();restore(i.s);ov.hidden=true;paused=false}catch(x){demoStart(true)}return}
+  if(e.target.closest('[data-new]')){const fromGame=!!S&&!DEMO.on,over=!!S?.over;if(S&&!S.over)saveGame(true);if(fromGame)MT.exit();setup();if(fromGame)PF.brk(over);return}
+  if(e.target.closest('[data-cont]')){const i=savedInfo();if(i)try{demoStop();restore(i.s);ov.hidden=true;paused=false;MT.cont('save')}catch(x){demoStart(true)}return}
   if(e.target.closest('[data-save]')){saveGame(false);return}
   if(e.target.closest('[data-hints]')){setHints(OPT.hints?0:1);e.target.closest('[data-hints]').textContent='Подсказки-задачи: '+(OPT.hints?'вкл — скрыть':'выкл — показать');return}
   if(e.target.closest('[data-code]')&&S){ov.innerHTML=`<div class="card"><div class="th"><h1>Код</h1><button data-close>Играть</button></div><p class="small">Это вся твоя игра одной строкой. Скопируй и сохрани в заметки. Загрузить: «В главное меню» → «Загрузить из кода сохранения».</p><textarea id="codeT" readonly>${toCode(snapshot())}</textarea><div class="btns" style="grid-template-columns:1fr"><button data-copy>Скопировать</button></div></div>`;return}
   if(e.target.closest('[data-copy]')){const t=$('#codeT');t.select();try{navigator.clipboard.writeText(t.value).then(()=>msg('Код скопирован','#7bd36b'),()=>msg('Выдели текст и скопируй вручную','#ffb347'))}catch(x){msg('Выдели текст и скопируй вручную','#ffb347')}return}
   if(e.target.closest('[data-imp]')){ov.innerHTML=`<div class="card"><div class="th"><h1>Загрузка</h1><button class="s" data-new>Назад</button></div><p class="small">Вставь код сохранения:</p><textarea id="impT" placeholder="Вставь код сюда"></textarea><div class="btns" style="grid-template-columns:1fr"><button data-load>Загрузить</button></div><p class="small" id="impE"></p></div>`;return}
   if(e.target.closest('[data-load]')){let str;try{str=fromCode($('#impT').value.trim());JSON.parse(str)}catch(x){$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.';return}
-    try{demoStop();restore(str);ov.hidden=true;paused=false;msg('Игра загружена','#7bd36b')}catch(x){demoStart(true);ov.hidden=false;$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.'}return}
+    try{demoStop();restore(str);ov.hidden=true;paused=false;MT.cont('code');msg('Игра загружена','#7bd36b')}catch(x){demoStart(true);ov.hidden=false;$('#impE').textContent='Код не подходит. Проверь, что скопирован целиком.'}return}
   if(e.target.closest('[data-close]')){ov.hidden=true;paused=false;ui();return}
   if(S&&e.target.closest('[data-draft]')){S.pl[0].draft=+e.target.closest('[data-draft]').dataset.draft;econRender();ui();return}
   if(S&&e.target.closest('[data-tax]')){S.pl[0].tax=+e.target.closest('[data-tax]').dataset.tax;econRender();ui();return}
